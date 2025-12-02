@@ -1,8 +1,11 @@
 # app/api/main.py
 
+from __future__ import annotations
+
+import uuid
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import uuid
 
 from app.api.schemas import ChatRequest, ChatResponse
 from app.itineraries.models import TravelProfile, Itinerary
@@ -17,9 +20,10 @@ app = FastAPI(
     version="1.3.0",
 )
 
+# CORS (pour que Streamlit/Gradio en front puissent appeler l'API)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],        # pour un projet étudiant c'est ok
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,28 +31,38 @@ app.add_middleware(
 
 
 # =====================================================
-#  🔧 SESSIONS AVEC MÉMOIRE PERSISTANTE
+#  🔧 SESSIONS AVEC MÉMOIRE EN RAM (simple mais suffisant)
 # =====================================================
 
-chat_sessions = {}   # { session_id: { chain, memory } }
+# Dictionnaire { session_id: { "chain": ConversationalRetrievalChain, "history": [...] } }
+chat_sessions: dict[str, dict] = {}
 
 
 def create_new_session() -> str:
+    """
+    Crée une nouvelle session de chat :
+    - nouvelle chaîne RAG + mémoire (via get_rag_conversation_chain)
+    - historique vide
+    """
     session_id = str(uuid.uuid4())
     chain = get_rag_conversation_chain()
 
     chat_sessions[session_id] = {
         "chain": chain,
-        "history": []
+        "history": [],
     }
     return session_id
 
 
-def get_session(session_id: str):
+def get_session(session_id: str) -> tuple[str, dict]:
+    """
+    Retourne (session_id_effectif, session_data).
+    Si la session demandée n'existe pas, on crée une nouvelle session.
+    """
     session = chat_sessions.get(session_id)
     if session is None:
-        session_id = create_new_session()
-        session = chat_sessions[session_id]
+        new_id = create_new_session()
+        return new_id, chat_sessions[new_id]
     return session_id, session
 
 
@@ -66,45 +80,58 @@ def health_check():
 # -----------------------------------------------------
 @app.post("/itinerary", response_model=Itinerary)
 def create_itinerary(profile: TravelProfile):
+    """
+    Génère un itinéraire complet à partir d'un TravelProfile.
+    """
     try:
-        return generate_itinerary(profile)
+        itinerary = generate_itinerary(profile)
+        return itinerary
     except Exception as e:
         raise HTTPException(500, f"Erreur génération itinéraire : {e}")
 
 
 # -----------------------------------------------------
-#  💬 CHATBOT AVEC MEMOIRE
+#  💬 CHATBOT AVEC MEMOIRE RAG
 # -----------------------------------------------------
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_assistant(request: ChatRequest):
-
+    """
+    Chatbot touristique :
+    - si pas de session_id -> création d'une nouvelle session avec mémoire
+    - sinon on récupère la chaîne RAG associée
+    """
+    # Gestion de la session
     if request.session_id is None:
         session_id = create_new_session()
     else:
-        session_id, session = get_session(request.session_id)
+        session_id, _ = get_session(request.session_id)
 
     session = chat_sessions[session_id]
     chain = session["chain"]
 
+    # Appel du RAG
     try:
         result = chain({"question": request.message})
         answer = result["answer"]
     except Exception as e:
         raise HTTPException(500, f"Erreur interne chat : {e}")
 
-    session["history"].append({
-        "user": request.message,
-        "assistant": answer
-    })
+    # Mise à jour historique (au cas où tu veuilles l'afficher côté front)
+    session["history"].append(
+        {
+            "user": request.message,
+            "assistant": answer,
+        }
+    )
 
     return ChatResponse(
         session_id=session_id,
-        answer=answer
+        answer=answer,
     )
 
 
 # -----------------------------------------------------
-#  ⭐ NOUVEAU : RECOMMANDATIONS AVANT ITINERAIRE
+#  ⭐ RECOMMANDATIONS DE LIEUX AVANT ITINERAIRE
 # -----------------------------------------------------
 @app.get("/recommendations")
 def get_recommendations(city: str, interests: str = "", k: int = 10):
@@ -112,8 +139,9 @@ def get_recommendations(city: str, interests: str = "", k: int = 10):
     Recommander des lieux en fonction :
     - d'une ville
     - d'intérêts (culture, nature, gastronomy, shopping...)
-    """
 
+    Utilise directement le retriever FAISS (RAG) sans LLM.
+    """
     retriever = get_retriever(k=k, city=city)
 
     query = f"Lieux recommandés pour : {interests} à {city}"
@@ -130,4 +158,3 @@ def get_recommendations(city: str, interests: str = "", k: int = 10):
         }
         for d in docs
     ]
-

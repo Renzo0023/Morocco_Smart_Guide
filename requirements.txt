@@ -1,11 +1,34 @@
+# ---- Gestion des variables d'environnement ----
 python-dotenv
+
+# ---- API Backend ----
 fastapi
 uvicorn[standard]
-pydantic
-langchain
-langchain-openai
-openai
+
+# ---- Modèles & validation ----
+pydantic>=1.10,<3.0
+
+# ---- LangChain (version stable & compatible HF) ----
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-core>=0.1.0
+
+# ---- Hugging Face (LLM + Embeddings) ----
+transformers>=4.36
+sentence-transformers
+huggingface-hub
+
+# ---- Vector Store (FAISS) ----
 faiss-cpu
-jupyter
-streamlit
+
+# ---- HTTP client ----
 httpx
+
+# ---- Interface utilisateur (Streamlit) ----
+streamlit
+
+# ---- Développement / notebooks ----
+jupyter
+
+# ---- (Optionnel) pour accélérer torch si besoin ----
+# torch      # (Laisse commenté. Installer selon ta machine CPU/GPU)

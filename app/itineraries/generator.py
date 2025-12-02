@@ -1,10 +1,13 @@
 # app/itineraries/generator.py
+
 import json
-import re
 from typing import List, Optional
 
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import Document, HumanMessage, SystemMessage
+# Compatibilité Document selon la version de LangChain
+try:
+    from langchain_core.documents import Document
+except ImportError:
+    from langchain.schema import Document
 
 from app.itineraries.models import (
     TravelProfile,
@@ -12,32 +15,30 @@ from app.itineraries.models import (
     ItineraryDay,
     ItineraryActivity,
 )
-# NOTE: we import get_retriever from the rag module.
-# If your P2 implemented get_retriever() in app.rag.vectorstore.py, change the import accordingly.
+
+# NOTE: On importe get_retriever depuis le vectorstore (comme prévu dans ton P2).
 try:
-    from app.rag.vectorstore import get_retriever  # preferred if vectorstore provides it
+    from app.rag.vectorstore import get_retriever  # recommandé
 except Exception:
-    try:
-        from app.rag.qa_chain import get_retriever  # fallback
-    except Exception:
-        # If neither exists, raise informative error at import time.
-        raise ImportError(
-            "Missing get_retriever() in app.rag.vectorstore or app.rag.qa_chain. "
-            "P2 doit exposer une fonction get_retriever() qui renvoie un LangChain retriever."
-        )
+    # Si un jour tu déplaces get_retriever dans un autre module, adapter ici.
+    raise ImportError(
+        "Missing get_retriever() dans app.rag.vectorstore. "
+        "P2 doit exposer une fonction get_retriever() qui renvoie un retriever LangChain."
+    )
 
-from app.config import OPENAI_MODEL, OPENAI_API_KEY  # assure-toi que config.py existe
+# On réutilise le LLM Hugging Face défini dans qa_chain.py
+from app.rag.qa_chain import get_llm
 
 
-# ---------- Helpers ----------
+# ---------- Helpers RAG / sélection de lieux ----------
 
 def build_retriever_query(profile: TravelProfile) -> str:
     """
-    Construit une requête textuelle pour interroger FAISS selon le profil.
+    Construit une requête textuelle pour interroger FAISS selon le profil voyageur.
     """
     interests = ", ".join(profile.interests) if profile.interests else "général"
     constraints = profile.constraints or "aucune contrainte particulière"
-    city_clause = f"Ville: {profile.city}." if profile.city else "Multi-ville."
+    city_clause = f"Ville: {profile.city}." if getattr(profile, "city", None) else "Multi-ville."
 
     return (
         f"{city_clause} Séjour de {profile.duration_days} jours. "
@@ -49,34 +50,38 @@ def build_retriever_query(profile: TravelProfile) -> str:
 def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Document]:
     """
     Utilise le retriever FAISS pour obtenir des documents candidats.
+
     Si les documents ont la metadata 'city' et que profile.city est renseigné,
     on filtre pour ne garder que ceux de la ville souhaitée.
     """
     retriever = get_retriever()
     query = build_retriever_query(profile)
 
-    # utiliser la méthode standard du retriever pour obtenir les docs
-    # Certains retrievers fournissent `get_relevant_documents(query)` ; sinon `retrieve`/`similarity_search`
+    # Utiliser la méthode standard du retriever pour obtenir les docs
     if hasattr(retriever, "get_relevant_documents"):
         docs = retriever.get_relevant_documents(query)
     elif hasattr(retriever, "get_relevant_documents_by_query"):
         docs = retriever.get_relevant_documents_by_query(query)
     else:
-        # fallback : essayer similarity_search
+        # fallback : similarity_search
         docs = retriever.similarity_search(query, k=max_docs if max_docs else 10)
 
     # Filtrer par city metadata si demandé
-    if profile.city:
-        filtered = []
+    if getattr(profile, "city", None):
+        filtered: List[Document] = []
         for d in docs:
             meta_city = None
             if isinstance(d.metadata, dict):
-                meta_city = d.metadata.get("city") or d.metadata.get("location") or d.metadata.get("source_city")
+                meta_city = (
+                    d.metadata.get("city")
+                    or d.metadata.get("location")
+                    or d.metadata.get("source_city")
+                )
                 if meta_city and isinstance(meta_city, str):
                     if profile.city.lower() in meta_city.lower():
                         filtered.append(d)
                 else:
-                    # keep if no metadata city (conservative)
+                    # si pas de ville en metadata, on conserve (comportement conservatif)
                     filtered.append(d)
             else:
                 filtered.append(d)
@@ -87,8 +92,8 @@ def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Doc
 
 def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> str:
     """
-    Transforme les documents en un grand bloc de texte lisible par le LLM.
-    tronque si trop long (max_chars).
+    Transforme les documents en un bloc de texte lisible par le LLM.
+    Tronque si trop long (max_chars).
     """
     parts = []
     for d in docs:
@@ -98,7 +103,6 @@ def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> st
         category = meta.get("category") or ""
         budget = meta.get("budget") or ""
         best_time = meta.get("best_time") or ""
-        # page_content contient la description préparée par P1 -> utile
         parts.append(
             f"- {name} | city: {city} | category: {category} | budget: {budget} | best_time: {best_time}\n"
             f"  Description: {d.page_content}\n"
@@ -111,13 +115,13 @@ def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> st
 
 def build_itinerary_prompt(profile: TravelProfile, places_text: str) -> str:
     """
-    Construire un prompt explicite demandant une sortie JSON strictement formatée.
+    Construit un prompt explicite demandant une sortie JSON strictement formatée.
     """
     interests = ", ".join(profile.interests) if profile.interests else "général"
     constraints = profile.constraints or "aucune contrainte particulière"
 
     prompt = f"""
-Tu es un expert en tourisme local et planification de voyages.
+Tu es un expert en tourisme au Maroc et en planification de voyages.
 
 Contrainte utilisateur:
 - Ville principale: {profile.city or 'Multi-villes (pas de ville spécifiée)'}
@@ -149,16 +153,21 @@ Instructions:
           "description": "...",
           "budget": "...",
           "best_time": "...",
-          "tips": "..."
+          "tips": "...",
+          "source_id": "...",
+          "source_city": "..."
         }}
       ],
       "afternoon": [...],
       "evening": [...]
     }}
-  ]
+  ],
+  "notes": "optionnel: remarques globales sur l'itinéraire"
 }}
 
-IMPORTANT: Ne fournis aucun texte hors du JSON. Si tu dois mentionner un manque d'information, place le message dans un champ "notes" au niveau du JSON.
+IMPORTANT:
+- Ne fournis aucun texte hors du JSON.
+- Si tu dois mentionner un manque d'information, place le message dans le champ "notes" au niveau du JSON.
 """
     return prompt
 
@@ -167,14 +176,13 @@ def extract_json_from_text(text: str) -> Optional[str]:
     """
     Tente d'extraire le premier objet JSON complet trouvé dans `text`.
     Renvoie la string JSON ou None.
-    Méthode robuste: trouve la première '{' et la dernière '}' correspondante.
+
+    Méthode robuste: cherche la première '{' et balaye jusqu'à équilibrer toutes les accolades.
     """
-    # Cherche premier '{'
     start = text.find("{")
     if start == -1:
         return None
 
-    # Balancer accolades : parcourt et trouve la position finale qui équilibre
     depth = 0
     for i in range(start, len(text)):
         if text[i] == "{":
@@ -182,7 +190,7 @@ def extract_json_from_text(text: str) -> Optional[str]:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return text[start:i + 1]
+                return text[start : i + 1]
     return None
 
 
@@ -191,9 +199,10 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
     Convertit le JSON (str) en Itinerary (Pydantic) en effectuant une validation minimale.
     """
     obj = json.loads(json_text)
-    days_out = []
+    days_out: List[ItineraryDay] = []
+
     for day in obj.get("days", []):
-        morning = []
+        morning: List[ItineraryActivity] = []
         for a in day.get("morning", []):
             morning.append(
                 ItineraryActivity(
@@ -203,11 +212,12 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     budget=a.get("budget"),
                     best_time=a.get("best_time"),
                     tips=a.get("tips"),
-                    source_id=a.get("source_id'),
+                    source_id=a.get("source_id"),
                     source_city=a.get("source_city"),
                 )
             )
-        afternoon = []
+
+        afternoon: List[ItineraryActivity] = []
         for a in day.get("afternoon", []):
             afternoon.append(
                 ItineraryActivity(
@@ -221,7 +231,8 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     source_city=a.get("source_city"),
                 )
             )
-        evening = []
+
+        evening: List[ItineraryActivity] = []
         for a in day.get("evening", []):
             evening.append(
                 ItineraryActivity(
@@ -235,6 +246,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     source_city=a.get("source_city"),
                 )
             )
+
         day_obj = ItineraryDay(
             day_number=int(day.get("day_number", 0)),
             morning=morning,
@@ -248,43 +260,30 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
         duration_days=profile.duration_days,
         profile=profile,
         days=days_out,
+        notes=obj.get("notes"),
     )
     return itinerary
 
 
-# ---------- LLM call ----------
-
-def get_llm():
-    """
-    Instancie le ChatOpenAI.
-    Assure-toi que app.config fournit OPENAI_API_KEY et OPENAI_MODEL.
-    """
-    # On utilise langchain.chat_models.ChatOpenAI (moderne)
-    # temperature modérée pour varier sans perdre cohérence
-    chat = ChatOpenAI(
-        model_name=OPENAI_MODEL,
-        temperature=0.5,
-        openai_api_key=OPENAI_API_KEY
-    )
-    return chat
-
+# ---------- LLM call (Hugging Face) ----------
 
 def generate_itinerary(profile: TravelProfile, max_docs: int = 30) -> Itinerary:
     """
-    Fonction principale exposée: génère un Itinerary à partir d'un TravelProfile.
+    Fonction principale : génère un Itinerary à partir d'un TravelProfile.
 
     Étapes :
-    - récupère candidats via FAISS (P2)
-    - construit prompt
-    - appelle LLM
-    - extrait et parse le JSON
-    - retourne Itinerary (Pydantic)
+    - récupère candidats via FAISS (RAG)
+    - construit un prompt détaillé
+    - appelle le LLM Hugging Face
+    - extrait et parse le JSON renvoyé
+    - retourne un objet Itinerary (Pydantic)
     """
     # 1) récupérer les docs candidats
     docs = get_candidate_places(profile, max_docs=max_docs)
     if not docs:
-        # fallback minimal si pas de documents
-        raise ValueError("Aucune donnée trouvée pour le profil donné. Vérifie la base de connaissances.")
+        raise ValueError(
+            "Aucune donnée trouvée pour le profil donné. Vérifie la base de connaissances (CSV) et l'index FAISS."
+        )
 
     # 2) formater pour prompt
     places_text = format_places_for_prompt(docs)
@@ -292,55 +291,48 @@ def generate_itinerary(profile: TravelProfile, max_docs: int = 30) -> Itinerary:
     # 3) construire prompt
     prompt = build_itinerary_prompt(profile, places_text)
 
-    # 4) invoquer LLM (sous forme de chat)
+    # 4) invoquer LLM Hugging Face (recyclage de get_llm() défini dans qa_chain)
     llm = get_llm()
-    system_msg = SystemMessage(content="Tu es un assistant expert en planification de voyages.")
-    human_msg = HumanMessage(content=prompt)
 
     try:
-        response = llm([system_msg, human_msg])
-        # Selon la version, response peut renvoyer un object avec .content ou un str
-        raw_text = None
-        if isinstance(response, str):
-            raw_text = response
+        # API moderne : invoke()
+        raw_text = llm.invoke(prompt)
+    except TypeError:
+        # fallback : certains wrappers supportent l'appel direct
+        raw_text = llm(prompt)
+
+    # Normaliser en string si nécessaire
+    if not isinstance(raw_text, str):
+        # Certains LLMs pourraient renvoyer un objet avec .content ou autre
+        if hasattr(raw_text, "content"):
+            raw_text = raw_text.content
         else:
-            # ChatOpenAI retourne souvent un object avec .content accessible via response.content
-            # mais en LangChain le return type peut être un ChatResult -> response.generations...
-            # Tentons plusieurs accès
-            if hasattr(response, "content"):
-                raw_text = response.content
-            elif hasattr(response, "generations"):
-                # response.generations : list[List[ChatGeneration]]
-                try:
-                    raw_text = response.generations[0][0].text
-                except Exception:
-                    raw_text = str(response)
-            else:
-                raw_text = str(response)
+            raw_text = str(raw_text)
 
-    except Exception as e:
-        raise RuntimeError(f"Erreur lors de l'appel LLM: {e}")
-
-    # 5) extraire JSON robuste
+    # 5) extraire JSON
     json_str = extract_json_from_text(raw_text or "")
     if not json_str:
-        # tentatives de nettoyage simples avant d'abandonner
-        # Parfois l'IA renvoie du texte avec "Réponse:\n{...}\n" -> on tente d'extraire d'abord '{'...' }'
-        # Si extraction échoue, on échoue proprement.
-        raise ValueError(f"Impossible d'extraire un JSON de la réponse du LLM. Réponse brute:\n{raw_text}")
+        raise ValueError(
+            "Impossible d'extraire un JSON valide de la réponse du LLM.\n"
+            f"Réponse brute:\n{raw_text}"
+        )
 
-    # 6) parser en Itinerary (Pydantic)
+    # 6) parser en Itinerary
     try:
         itinerary = parse_itinerary_json(json_str, profile)
     except Exception as e:
-        raise ValueError(f"Le JSON extrait est invalide ou inattendu: {e}\nJSON_Str: {json_str[:1000]}")
+        raise ValueError(
+            f"Le JSON extrait est invalide ou inattendu: {e}\n"
+            f"JSON extrait (début): {json_str[:1000]}"
+        )
 
     return itinerary
 
 
-# ---------- Usage example (pour notebooks) ----------
+# ---------- Usage example (pour tests / notebooks) ----------
+
 if __name__ == "__main__":
-    # petit test rapide (à lancer dans un environnement avec clés et index FAISS)
+    # Test rapide (nécessite FAISS index + variables HF configurées)
     sample_profile = TravelProfile(
         city="Marrakech",
         duration_days=3,
