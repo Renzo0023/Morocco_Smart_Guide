@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from app.config import EMBEDDING_MODEL_NAME
 
 _embeddings_cache = None

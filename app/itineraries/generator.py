@@ -276,41 +276,41 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
 
 def call_hf_llm(prompt: str) -> str:
     """
-    Appelle le modèle Hugging Face via InferenceClient pour générer du texte.
-
-    On utilise la tâche "text-generation" qui est supportée par les modèles
-    type mistralai/Mistral-7B-Instruct sur l'API Inference.
+    Appelle le modèle Hugging Face via l'API chat pour générer du texte.
+    Compatible avec les versions récentes du client Inference.
     """
     if not HF_API_KEY:
-        raise ValueError("HF_API_KEY manquant dans le fichier .env")
+        raise ValueError("HF_API_KEY manquant dans .env")
 
-    # Client HF Inference
-    client = InferenceClient(
-        model=LLM_MODEL_NAME,
-        token=HF_API_KEY,
-    )
+    client = InferenceClient(model=LLM_MODEL_NAME, token=HF_API_KEY)
 
-    # Appel text_generation (prompt complet → texte généré)
-    resp = client.text_generation(
-        prompt,
+    # Appel chat standard
+    resp = client.chat(
+        messages=[{"role": "user", "content": prompt}],
         max_new_tokens=800,
         temperature=0.5,
         do_sample=True,
         top_p=0.9,
         repetition_penalty=1.05,
-        return_full_text=False,  # ne pas renvoyer le prompt, juste la génération
     )
 
-    # Selon la version, resp est généralement une string, mais on reste défensif
+    # Extraction défensive du texte
+    # Selon la version, resp peut être :
+    # - un dict avec 'generated_text'
+    # - un ProxyClientChatMessage
+    # - une liste de messages
     if isinstance(resp, str):
         return resp
     if isinstance(resp, dict) and "generated_text" in resp:
         return resp["generated_text"]
-    if hasattr(resp, "generated_text"):
-        return resp.generated_text
-
+    if hasattr(resp, "content"):
+        # ProxyClientChatMessage
+        return resp.content[0].text if isinstance(resp.content, list) else str(resp.content)
+    if isinstance(resp, list) and len(resp) > 0:
+        first = resp[0]
+        if hasattr(first, "content") and isinstance(first.content, list):
+            return first.content[0].text
     return str(resp)
-
 
 
 

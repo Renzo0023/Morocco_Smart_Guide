@@ -46,36 +46,36 @@ class SimpleMemory:
 def call_hf_llm(prompt: str) -> str:
     """
     Appelle le modèle Hugging Face pour répondre à une question dans le cadre du RAG.
-
-    Utilise la tâche "text-generation" (prompt -> réponse).
+    Compatible avec ProxyClientChat / Mistral-7B-Instruct.
     """
     if not HF_API_KEY:
         raise ValueError("HF_API_KEY manquant dans .env")
 
-    client = InferenceClient(
-        model=LLM_MODEL_NAME,
-        token=HF_API_KEY,
-    )
+    from huggingface_hub import InferenceClient
 
-    resp = client.text_generation(
-        prompt,
+    client = InferenceClient(model=LLM_MODEL_NAME, token=HF_API_KEY)
+
+    resp = client.chat(
+        messages=[{"role": "user", "content": prompt}],
         max_new_tokens=512,
         temperature=0.4,
         do_sample=True,
         top_p=0.9,
         repetition_penalty=1.05,
-        return_full_text=False,
     )
 
+    # Extraction défensive du texte généré
     if isinstance(resp, str):
         return resp
     if isinstance(resp, dict) and "generated_text" in resp:
         return resp["generated_text"]
-    if hasattr(resp, "generated_text"):
-        return resp.generated_text
-
+    if hasattr(resp, "content") and isinstance(resp.content, list):
+        return resp.content[0].text
+    if isinstance(resp, list) and len(resp) > 0:
+        first = resp[0]
+        if hasattr(first, "content") and isinstance(first.content, list):
+            return first.content[0].text
     return str(resp)
-
 
 
 # ============================================================
