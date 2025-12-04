@@ -1,0 +1,15 @@
+# Environnement Python
+venv/
+.env
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Index FAISS (re-générés par les scripts)
+vectorstore/faiss_index/
+
+# Cache
+*.cache
