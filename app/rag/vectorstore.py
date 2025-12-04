@@ -8,14 +8,14 @@ from typing import List, Optional
 # Compatibilité LangChain (ancienne / nouvelle version)
 try:
     from langchain_core.documents import Document
-except ImportError:
+except ImportError:  # anciennes versions
     from langchain.schema import Document
 
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 
 from app.rag.embeddings import get_embeddings
 from app.data.loader import load_places, to_documents
-from app.config import FAISS_INDEX_PATH  # défini dans config.py
+from app.config import FAISS_INDEX_PATH  # string venant de .env / config.py
 
 
 # Dossier où l'index FAISS est sauvegardé
@@ -43,8 +43,8 @@ def build_and_save_faiss_index(save_dir: Path | None = None) -> None:
     """
     Construit l'index FAISS et le sauvegarde dans un dossier (par défaut INDEX_DIR).
 
-    À appeler une première fois (ou à chaque mise à jour des données) via un script :
-      python scripts/build_faiss_index.py
+    À appeler une première fois (ou à chaque mise à jour des données) via :
+      python -m scripts.build_faiss_index
     """
     save_dir = save_dir or INDEX_DIR
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,9 @@ def load_faiss_index(load_dir: Path | None = None) -> FAISS:
     """
     Charge l'index FAISS depuis le disque.
 
-    Si l'index n'existe pas, lève une erreur avec un message clair.
+    Utilise allow_dangerous_deserialization=True car FAISS stocke une partie
+    de ses infos dans un pickle. C'est acceptable ici car tu charges un index
+    que TU as créé localement.
     """
     load_dir = load_dir or INDEX_DIR
 
@@ -71,15 +73,12 @@ def load_faiss_index(load_dir: Path | None = None) -> FAISS:
 
     embeddings = get_embeddings()
 
-    # Compat LangChain : certaines versions exigent allow_dangerous_deserialization=True
-    try:
-        vectorstore = FAISS.load_local(str(load_dir), embeddings)
-    except TypeError:
-        vectorstore = FAISS.load_local(
-            str(load_dir),
-            embeddings,
-            allow_dangerous_deserialization=True,
-        )
+    # On force explicitement allow_dangerous_deserialization=True
+    vectorstore = FAISS.load_local(
+        str(load_dir),
+        embeddings,
+        allow_dangerous_deserialization=True,
+    )
 
     return vectorstore
 

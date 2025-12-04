@@ -254,7 +254,7 @@ def place_to_document(place: Place) -> Document:
     if place.tips:
         lines.append(f"Conseils: {place.tips}")
     if place.tags:
-        lines.append(f"Tags: {', '.join(place.tags)})
+        lines.append(f"Tags: {', '.join(place.tags)}")
 
     page_content = "\n".join(lines)
 

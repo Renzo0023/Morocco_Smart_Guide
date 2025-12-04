@@ -1,95 +1,141 @@
 # app/rag/qa_chain.py
 
 from __future__ import annotations
+from typing import Dict, Any, List
 
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import PromptTemplate
-
-# LLM Hugging Face (hébergé)
-try:
-    from langchain_community.llms import HuggingFaceHub
-except ImportError:
-    from langchain.llms import HuggingFaceHub  # fallback anciennes versions
+from huggingface_hub import InferenceClient
 
 from app.config import HF_API_KEY, LLM_MODEL_NAME
 from app.rag.vectorstore import get_retriever
 
 
-# -----------------------------
-# LLM Hugging Face
-# -----------------------------
+# ============================================================
+#  MÉMOIRE MAISON (remplace ConversationBufferMemory)
+# ============================================================
 
-def get_llm():
+class SimpleMemory:
     """
-    Retourne un LLM Hugging Face via l'API Inference.
+    Mémoire minimale compatible :
+    - history = liste de {"role": "user"/"assistant", "content": "..."}
+    """
 
-    - Modèle défini dans LLM_MODEL_NAME (config.py), ex :
-        "mistralai/Mistral-7B-Instruct-v0.2"
-    - Nécessite un token HF_API_KEY dans .env
+    def __init__(self):
+        self.chat_history: List[Dict[str, str]] = []
 
-    Si tu veux passer à un modèle local plus tard,
-    tu pourras remplacer cette fonction par un HuggingFacePipeline local.
+    def add_user_message(self, text: str):
+        self.chat_history.append({"role": "user", "content": text})
+
+    def add_ai_message(self, text: str):
+        self.chat_history.append({"role": "assistant", "content": text})
+
+    def get_history_as_text(self) -> str:
+        formatted = ""
+        for msg in self.chat_history:
+            role = "Utilisateur" if msg["role"] == "user" else "Assistant"
+            formatted += f"{role}: {msg['content']}\n"
+        return formatted
+
+
+# ============================================================
+#  Appel direct du LLM Hugging Face (InferenceClient)
+# ============================================================
+# ============================================================
+#  Appel direct du LLM Hugging Face (InferenceClient)
+# ============================================================
+
+def call_hf_llm(prompt: str) -> str:
+    """
+    Appelle le modèle Hugging Face pour répondre à une question dans le cadre du RAG.
+
+    Utilise la tâche "text-generation" (prompt -> réponse).
     """
     if not HF_API_KEY:
-        raise ValueError(
-            "HF_API_KEY manquant. Ajoute-le dans ton fichier .env pour utiliser HuggingFaceHub."
+        raise ValueError("HF_API_KEY manquant dans .env")
+
+    client = InferenceClient(
+        model=LLM_MODEL_NAME,
+        token=HF_API_KEY,
+    )
+
+    resp = client.text_generation(
+        prompt,
+        max_new_tokens=512,
+        temperature=0.4,
+        do_sample=True,
+        top_p=0.9,
+        repetition_penalty=1.05,
+        return_full_text=False,
+    )
+
+    if isinstance(resp, str):
+        return resp
+    if isinstance(resp, dict) and "generated_text" in resp:
+        return resp["generated_text"]
+    if hasattr(resp, "generated_text"):
+        return resp.generated_text
+
+    return str(resp)
+
+
+
+# ============================================================
+#  CHAÎNE RAG CONVERSATIONNELLE (implémentation maison)
+# ============================================================
+
+class SimpleRAGConversationChain:
+    """
+    Compatible avec ton ancien code :
+        result = chain({"question": "..."} )
+    """
+
+    def __init__(self, retriever):
+        self.retriever = retriever
+        self.memory = SimpleMemory()
+
+    def __call__(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        question = inputs.get("question")
+        if not question:
+            raise ValueError("La clé 'question' est requise.")
+
+        # 1) Ajouter question à la mémoire utilisateur
+        self.memory.add_user_message(question)
+
+        # 2) RAG : documents pertinents
+        docs = self.retriever.get_relevant_documents(question)
+        context = "\n\n".join(d.page_content for d in docs)
+
+        # 3) Historique formaté
+        history_text = self.memory.get_history_as_text()
+
+        # 4) Prompt final
+        prompt = (
+            "Tu es un expert du tourisme au Maroc. Réponds uniquement en te basant sur le contexte.\n"
+            "Si l'information n'est pas disponible, dis-le.\n\n"
+            "=== HISTORIQUE ===\n"
+            f"{history_text}\n\n"
+            "=== CONTEXTE ===\n"
+            f"{context}\n\n"
+            "=== QUESTION ===\n"
+            f"{question}\n\n"
+            "Réponds clairement et utilement.\n"
         )
 
-    llm = HuggingFaceHub(
-        repo_id=LLM_MODEL_NAME,
-        huggingfacehub_api_token=HF_API_KEY,
-        model_kwargs={
-            "temperature": 0.4,
-            "max_new_tokens": 512,
-        },
-    )
-    return llm
+        # 5) Appel du modèle Hugging Face
+        answer = call_hf_llm(prompt)
+
+        # 6) Ajouter réponse dans la mémoire
+        self.memory.add_ai_message(answer)
+
+        return {
+            "answer": answer,
+            "source_documents": docs,
+        }
 
 
-# -----------------------------
-# Chaîne RAG conversationnelle
-# -----------------------------
+# ============================================================
+#  Fonction publique pour FastAPI
+# ============================================================
 
 def get_rag_conversation_chain(k: int = 5):
-    """
-    Crée une chaîne RAG conversationnelle avec :
-
-    - Retriever FAISS (multi-villes)
-    - LLM Hugging Face
-    - Mémoire de conversation (historique)
-    - Prompt spécialisé tourisme au Maroc
-    """
     retriever = get_retriever(k=k)
-    llm = get_llm()
-
-    # Mémoire : garde tout l'historique de la session
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True,
-    )
-
-    # Prompt personnalisé pour combiner contexte + question
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template=(
-            "Tu es un expert du tourisme au Maroc (toutes villes : Marrakech, Fès, Tanger, "
-            "Agadir, Rabat, Chefchaouen, Essaouira, etc.).\n"
-            "Réponds uniquement en utilisant le contexte fourni.\n\n"
-            "=== CONTEXTE ===\n{context}\n"
-            "=== QUESTION ===\n{question}\n\n"
-            "Réponds dans un style clair, humain et utile. "
-            "Si l'information n'est pas dans le contexte, dis-le explicitement."
-        ),
-    )
-
-    # Chaîne RAG + mémoire
-    chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        memory=memory,
-        combine_docs_chain_kwargs={"prompt": prompt},
-        return_source_documents=True,
-    )
-
-    return chain
+    return SimpleRAGConversationChain(retriever)

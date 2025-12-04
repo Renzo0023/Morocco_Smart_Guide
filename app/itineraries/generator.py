@@ -1,44 +1,37 @@
 # app/itineraries/generator.py
 
+from __future__ import annotations
+
 import json
 from typing import List, Optional
 
-# Compatibilité Document selon la version de LangChain
+# Compat Documents
 try:
     from langchain_core.documents import Document
 except ImportError:
     from langchain.schema import Document
 
+from huggingface_hub import InferenceClient
+
+from app.config import HF_API_KEY, LLM_MODEL_NAME
 from app.itineraries.models import (
     TravelProfile,
     Itinerary,
     ItineraryDay,
     ItineraryActivity,
 )
-
-# NOTE: On importe get_retriever depuis le vectorstore (comme prévu dans ton P2).
-try:
-    from app.rag.vectorstore import get_retriever  # recommandé
-except Exception:
-    # Si un jour tu déplaces get_retriever dans un autre module, adapter ici.
-    raise ImportError(
-        "Missing get_retriever() dans app.rag.vectorstore. "
-        "P2 doit exposer une fonction get_retriever() qui renvoie un retriever LangChain."
-    )
-
-# On réutilise le LLM Hugging Face défini dans qa_chain.py
-from app.rag.qa_chain import get_llm
+from app.rag.vectorstore import get_retriever
 
 
-# ---------- Helpers RAG / sélection de lieux ----------
+# ---------- Helpers RAG ----------
 
 def build_retriever_query(profile: TravelProfile) -> str:
     """
-    Construit une requête textuelle pour interroger FAISS selon le profil voyageur.
+    Construit une requête textuelle pour interroger FAISS selon le profil.
     """
     interests = ", ".join(profile.interests) if profile.interests else "général"
     constraints = profile.constraints or "aucune contrainte particulière"
-    city_clause = f"Ville: {profile.city}." if getattr(profile, "city", None) else "Multi-ville."
+    city_clause = f"Ville: {profile.city}." if profile.city else "Multi-ville."
 
     return (
         f"{city_clause} Séjour de {profile.duration_days} jours. "
@@ -51,24 +44,41 @@ def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Doc
     """
     Utilise le retriever FAISS pour obtenir des documents candidats.
 
-    Si les documents ont la metadata 'city' et que profile.city est renseigné,
-    on filtre pour ne garder que ceux de la ville souhaitée.
+    Compatible avec les nouvelles versions de LangChain :
+    - tente get_relevant_documents()
+    - sinon tente invoke()
+    - sinon descend au niveau vectorstore.similarity_search()
     """
-    retriever = get_retriever()
+    retriever = get_retriever(k=max_docs)
     query = build_retriever_query(profile)
 
-    # Utiliser la méthode standard du retriever pour obtenir les docs
+    docs: List[Document] = []
+
+    # 1) Nouveau style: get_relevant_documents
     if hasattr(retriever, "get_relevant_documents"):
         docs = retriever.get_relevant_documents(query)
-    elif hasattr(retriever, "get_relevant_documents_by_query"):
-        docs = retriever.get_relevant_documents_by_query(query)
     else:
-        # fallback : similarity_search
-        docs = retriever.similarity_search(query, k=max_docs if max_docs else 10)
+        # 2) API de BaseRetriever (invoke)
+        try:
+            result = retriever.invoke(query)
+            if isinstance(result, list):
+                docs = result
+            else:
+                docs = [result]
+        except Exception:
+            # 3) fallback bas niveau : vecteur FAISS sous-jacent
+            vectorstore = getattr(retriever, "vectorstore", None)
+            if vectorstore is not None and hasattr(vectorstore, "similarity_search"):
+                docs = vectorstore.similarity_search(query, k=max_docs)
+            else:
+                raise RuntimeError(
+                    "Impossible de récupérer des documents avec le retriever : "
+                    "ni get_relevant_documents, ni invoke, ni vectorstore.similarity_search disponibles."
+                )
 
     # Filtrer par city metadata si demandé
-    if getattr(profile, "city", None):
-        filtered: List[Document] = []
+    if profile.city:
+        filtered = []
         for d in docs:
             meta_city = None
             if isinstance(d.metadata, dict):
@@ -81,7 +91,6 @@ def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Doc
                     if profile.city.lower() in meta_city.lower():
                         filtered.append(d)
                 else:
-                    # si pas de ville en metadata, on conserve (comportement conservatif)
                     filtered.append(d)
             else:
                 filtered.append(d)
@@ -92,8 +101,8 @@ def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Doc
 
 def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> str:
     """
-    Transforme les documents en un bloc de texte lisible par le LLM.
-    Tronque si trop long (max_chars).
+    Transforme les documents en un grand bloc de texte lisible par le LLM.
+    Tronque si trop long.
     """
     parts = []
     for d in docs:
@@ -115,13 +124,13 @@ def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> st
 
 def build_itinerary_prompt(profile: TravelProfile, places_text: str) -> str:
     """
-    Construit un prompt explicite demandant une sortie JSON strictement formatée.
+    Construire un prompt explicite demandant une sortie JSON strictement formatée.
     """
     interests = ", ".join(profile.interests) if profile.interests else "général"
     constraints = profile.constraints or "aucune contrainte particulière"
 
     prompt = f"""
-Tu es un expert en tourisme au Maroc et en planification de voyages.
+Tu es un expert en tourisme local et planification de voyages au Maroc.
 
 Contrainte utilisateur:
 - Ville principale: {profile.city or 'Multi-villes (pas de ville spécifiée)'}
@@ -161,13 +170,13 @@ Instructions:
       "afternoon": [...],
       "evening": [...]
     }}
-  ],
-  "notes": "optionnel: remarques globales sur l'itinéraire"
+  ]
 }}
 
 IMPORTANT:
 - Ne fournis aucun texte hors du JSON.
-- Si tu dois mentionner un manque d'information, place le message dans le champ "notes" au niveau du JSON.
+- Si tu dois mentionner un manque d'information, place le message dans un champ "notes" au niveau du JSON.
+Réponds dans la langue demandée: {profile.language}.
 """
     return prompt
 
@@ -176,8 +185,6 @@ def extract_json_from_text(text: str) -> Optional[str]:
     """
     Tente d'extraire le premier objet JSON complet trouvé dans `text`.
     Renvoie la string JSON ou None.
-
-    Méthode robuste: cherche la première '{' et balaye jusqu'à équilibrer toutes les accolades.
     """
     start = text.find("{")
     if start == -1:
@@ -190,19 +197,19 @@ def extract_json_from_text(text: str) -> Optional[str]:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return text[start : i + 1]
+                return text[start: i + 1]
     return None
 
 
 def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
     """
-    Convertit le JSON (str) en Itinerary (Pydantic) en effectuant une validation minimale.
+    Convertit le JSON (str) en Itinerary (Pydantic).
     """
     obj = json.loads(json_text)
     days_out: List[ItineraryDay] = []
 
     for day in obj.get("days", []):
-        morning: List[ItineraryActivity] = []
+        morning = []
         for a in day.get("morning", []):
             morning.append(
                 ItineraryActivity(
@@ -217,7 +224,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                 )
             )
 
-        afternoon: List[ItineraryActivity] = []
+        afternoon = []
         for a in day.get("afternoon", []):
             afternoon.append(
                 ItineraryActivity(
@@ -232,7 +239,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                 )
             )
 
-        evening: List[ItineraryActivity] = []
+        evening = []
         for a in day.get("evening", []):
             evening.append(
                 ItineraryActivity(
@@ -260,29 +267,62 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
         duration_days=profile.duration_days,
         profile=profile,
         days=days_out,
-        notes=obj.get("notes"),
     )
     return itinerary
 
 
-# ---------- LLM call (Hugging Face) ----------
+# ---------- Appel direct du LLM Hugging Face ----------
+# ---------- Appel direct du LLM Hugging Face ----------
+
+def call_hf_llm(prompt: str) -> str:
+    """
+    Appelle le modèle Hugging Face via InferenceClient pour générer du texte.
+
+    On utilise la tâche "text-generation" qui est supportée par les modèles
+    type mistralai/Mistral-7B-Instruct sur l'API Inference.
+    """
+    if not HF_API_KEY:
+        raise ValueError("HF_API_KEY manquant dans le fichier .env")
+
+    # Client HF Inference
+    client = InferenceClient(
+        model=LLM_MODEL_NAME,
+        token=HF_API_KEY,
+    )
+
+    # Appel text_generation (prompt complet → texte généré)
+    resp = client.text_generation(
+        prompt,
+        max_new_tokens=800,
+        temperature=0.5,
+        do_sample=True,
+        top_p=0.9,
+        repetition_penalty=1.05,
+        return_full_text=False,  # ne pas renvoyer le prompt, juste la génération
+    )
+
+    # Selon la version, resp est généralement une string, mais on reste défensif
+    if isinstance(resp, str):
+        return resp
+    if isinstance(resp, dict) and "generated_text" in resp:
+        return resp["generated_text"]
+    if hasattr(resp, "generated_text"):
+        return resp.generated_text
+
+    return str(resp)
+
+
+
 
 def generate_itinerary(profile: TravelProfile, max_docs: int = 30) -> Itinerary:
     """
-    Fonction principale : génère un Itinerary à partir d'un TravelProfile.
-
-    Étapes :
-    - récupère candidats via FAISS (RAG)
-    - construit un prompt détaillé
-    - appelle le LLM Hugging Face
-    - extrait et parse le JSON renvoyé
-    - retourne un objet Itinerary (Pydantic)
+    Fonction principale exposée: génère un Itinerary à partir d'un TravelProfile.
     """
     # 1) récupérer les docs candidats
     docs = get_candidate_places(profile, max_docs=max_docs)
     if not docs:
         raise ValueError(
-            "Aucune donnée trouvée pour le profil donné. Vérifie la base de connaissances (CSV) et l'index FAISS."
+            "Aucune donnée trouvée pour le profil donné. Vérifie la base de connaissances."
         )
 
     # 2) formater pour prompt
@@ -291,48 +331,32 @@ def generate_itinerary(profile: TravelProfile, max_docs: int = 30) -> Itinerary:
     # 3) construire prompt
     prompt = build_itinerary_prompt(profile, places_text)
 
-    # 4) invoquer LLM Hugging Face (recyclage de get_llm() défini dans qa_chain)
-    llm = get_llm()
-
+    # 4) invoquer le LLM Hugging Face directement
     try:
-        # API moderne : invoke()
-        raw_text = llm.invoke(prompt)
-    except TypeError:
-        # fallback : certains wrappers supportent l'appel direct
-        raw_text = llm(prompt)
+        raw_text = call_hf_llm(prompt)
+    except Exception as e:
+        raise RuntimeError(f"Erreur lors de l'appel LLM: {e}")
 
-    # Normaliser en string si nécessaire
-    if not isinstance(raw_text, str):
-        # Certains LLMs pourraient renvoyer un objet avec .content ou autre
-        if hasattr(raw_text, "content"):
-            raw_text = raw_text.content
-        else:
-            raw_text = str(raw_text)
-
-    # 5) extraire JSON
+    # 5) extraire JSON robuste
     json_str = extract_json_from_text(raw_text or "")
     if not json_str:
         raise ValueError(
-            "Impossible d'extraire un JSON valide de la réponse du LLM.\n"
-            f"Réponse brute:\n{raw_text}"
+            f"Impossible d'extraire un JSON de la réponse du LLM. Réponse brute:\n{raw_text}"
         )
 
-    # 6) parser en Itinerary
+    # 6) parser en Itinerary (Pydantic)
     try:
         itinerary = parse_itinerary_json(json_str, profile)
     except Exception as e:
         raise ValueError(
-            f"Le JSON extrait est invalide ou inattendu: {e}\n"
-            f"JSON extrait (début): {json_str[:1000]}"
+            f"Le JSON extrait est invalide ou inattendu: {e}\nJSON_Str: {json_str[:1000]}"
         )
 
     return itinerary
 
 
-# ---------- Usage example (pour tests / notebooks) ----------
-
+# ---------- Usage example (pour notebooks) ----------
 if __name__ == "__main__":
-    # Test rapide (nécessite FAISS index + variables HF configurées)
     sample_profile = TravelProfile(
         city="Marrakech",
         duration_days=3,
