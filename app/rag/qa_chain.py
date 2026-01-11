@@ -44,38 +44,42 @@ class SimpleMemory:
 # ============================================================
 
 def call_hf_llm(prompt: str) -> str:
-    """
-    Appelle le modèle Hugging Face pour répondre à une question dans le cadre du RAG.
-    Compatible avec ProxyClientChat / Mistral-7B-Instruct.
-    """
     if not HF_API_KEY:
         raise ValueError("HF_API_KEY manquant dans .env")
 
-    from huggingface_hub import InferenceClient
-
     client = InferenceClient(model=LLM_MODEL_NAME, token=HF_API_KEY)
 
-    resp = client.chat(
+    resp = client.chat_completion(
         messages=[{"role": "user", "content": prompt}],
-        max_new_tokens=512,
+        max_tokens=2500,
         temperature=0.4,
-        do_sample=True,
         top_p=0.9,
-        repetition_penalty=1.05,
     )
 
-    # Extraction défensive du texte généré
-    if isinstance(resp, str):
-        return resp
-    if isinstance(resp, dict) and "generated_text" in resp:
-        return resp["generated_text"]
-    if hasattr(resp, "content") and isinstance(resp.content, list):
-        return resp.content[0].text
-    if isinstance(resp, list) and len(resp) > 0:
-        first = resp[0]
-        if hasattr(first, "content") and isinstance(first.content, list):
-            return first.content[0].text
+    # -------------------------------
+    # Extraction compatible Mistral
+    # -------------------------------
+    try:
+        # Format Mistral, Llama HF : {"choices": [{"text": "..."}]}
+        if hasattr(resp, "choices") and len(resp.choices) > 0:
+            choice = resp.choices[0]
+
+            if hasattr(choice, "text") and isinstance(choice.text, str):
+                return choice.text  # <-- MISTRAL v0.2 utilise ça !
+
+            # Format OpenAI-like
+            if hasattr(choice, "message") and isinstance(choice.message, dict):
+                if "content" in choice.message:
+                    return choice.message["content"]
+    except Exception:
+        pass
+
+    # Format direct HuggingFace ("generated_text")
+    if hasattr(resp, "generated_text"):
+        return resp.generated_text
+
     return str(resp)
+
 
 
 # ============================================================
@@ -101,7 +105,7 @@ class SimpleRAGConversationChain:
         self.memory.add_user_message(question)
 
         # 2) RAG : documents pertinents
-        docs = self.retriever.get_relevant_documents(question)
+        docs = self.retriever.invoke(question)
         context = "\n\n".join(d.page_content for d in docs)
 
         # 3) Historique formaté

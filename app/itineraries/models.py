@@ -1,20 +1,10 @@
-# app/itineraries/models.py
-
 from typing import List, Optional
-
 from pydantic import BaseModel, Field, validator
 
 
 class TravelProfile(BaseModel):
     """
     Représente la demande utilisateur pour générer un itinéraire.
-
-    - city : nom de la ville principale (ex: "Marrakech"). Peut être None pour une recherche multi-villes.
-    - duration_days : nombre de jours (int > 0).
-    - budget : "low" | "medium" | "high".
-    - interests : liste de centres d'intérêt (culture, gastronomy, shopping, nature, relax, nightlife, etc.).
-    - constraints : texte libre pour contrainte (avec enfants, peu de marche, etc.).
-    - language : code langue souhaitée ("fr", "en", ...).
     """
     city: Optional[str] = Field(default=None, description="Ville principale (optionnelle).")
     duration_days: int = Field(..., gt=0, description="Durée du séjour en jours (>0).")
@@ -32,16 +22,17 @@ class TravelProfile(BaseModel):
 
     @validator("interests", pre=True)
     def normalize_interests(cls, v):
-        # Permet d'accepter une string "culture, gastronomy" ou une vraie liste
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return v or []
+
+    class Config:
+        extra = "ignore"   # <<< AJOUT IMPORTANT
 
 
 class ItineraryActivity(BaseModel):
     """
     Activité / lieu dans l'itinéraire.
-    Les champs correspondent à ce que le LLM doit renvoyer dans le JSON.
     """
     name: str
     category: Optional[str] = None
@@ -49,10 +40,18 @@ class ItineraryActivity(BaseModel):
     budget: Optional[str] = None
     best_time: Optional[str] = None
     tips: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
-    # Optionnel : metadata source (id, city) pour rattacher l'activité à la base RAG
+    # Metadata optionnelle
     source_id: Optional[str] = None
     source_city: Optional[str] = None
+
+    # Ajout du lien Google Maps
+    maps_url: Optional[str] = None
+
+    class Config:
+        extra = "ignore"   # <<< AJOUT IMPORTANT
 
 
 class ItineraryDay(BaseModel):
@@ -64,6 +63,9 @@ class ItineraryDay(BaseModel):
     afternoon: List[ItineraryActivity] = Field(default_factory=list)
     evening: List[ItineraryActivity] = Field(default_factory=list)
 
+    class Config:
+        extra = "ignore"   # <<< AJOUT IMPORTANT
+
 
 class Itinerary(BaseModel):
     """
@@ -73,4 +75,7 @@ class Itinerary(BaseModel):
     duration_days: int
     profile: TravelProfile
     days: List[ItineraryDay] = Field(default_factory=list)
-    notes: Optional[str] = None  # remarques globales éventuelles (optionnel, rempli par le LLM)
+    notes: Optional[str] = None
+
+    class Config:
+        extra = "ignore"   # <<< AJOUT IMPORTANT

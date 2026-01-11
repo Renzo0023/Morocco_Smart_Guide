@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from datetime import time, timedelta, datetime
+
 # Compat Documents
 try:
     from langchain_core.documents import Document
@@ -122,6 +124,123 @@ def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> st
     return text
 
 
+
+def parse_place_from_doc(doc: Document) -> dict:
+    """
+    Extrait une structure exploitable depuis un Document FAISS.
+    """
+    meta = doc.metadata or {}
+
+    lat = meta.get("lat")
+    lon = meta.get("lon")
+
+    maps_url = generate_maps_url(meta.get("name", ""), meta.get("city", ""))
+
+    return {
+        "id": meta.get("id"),
+        "name": meta.get("name"),
+        "city": meta.get("city"),
+        "category": meta.get("category"),
+        "description": doc.page_content,
+        "budget": meta.get("budget"),
+        "best_time": meta.get("best_time"),
+        "duration": float(meta.get("duration_hours", 1.5)),
+        "tips": meta.get("tips"),
+        "maps_url": maps_url,
+    }
+
+
+def allocate_times(
+    activities: List[dict],
+    start_hour: int
+) -> List[dict]:
+    """
+    Assigne des horaires continus aux activités.
+    """
+    current = datetime(2000, 1, 1, start_hour, 0)
+
+    for a in activities:
+        duration = float(a.get("duration", 1.5))
+        a["start_time"] = current.strftime("%H:%M")
+        current += timedelta(hours=duration)
+        a["end_time"] = current.strftime("%H:%M")
+
+    return activities
+
+
+def build_time_based_plan(
+    places: List[dict],
+    duration_days: int
+) -> List[dict]:
+    """
+    Organise les lieux en jours / matin / après-midi / soir
+    en respectant des budgets temps réalistes.
+    """
+
+    TIME_SLOTS = {
+        "morning": 4.0,
+        "afternoon": 4.0,
+        "evening": 3.0,
+    }
+
+    days = [
+        {
+            "day_number": d + 1,
+            "morning": [],
+            "afternoon": [],
+            "evening": [],
+            "remaining": TIME_SLOTS.copy()
+        }
+        for d in range(duration_days)
+    ]
+
+    # Prioriser les lieux longs en premier
+    places = sorted(places, key=lambda x: x["duration"], reverse=True)
+
+    day_index = 0
+
+    for place in places:
+        placed = False
+        preferred = place.get("best_time")
+
+        while day_index < duration_days and not placed:
+            day = days[day_index]
+
+            slots = [preferred] if preferred in TIME_SLOTS else TIME_SLOTS.keys()
+
+            for slot in slots:
+                if place["duration"] <= day["remaining"][slot]:
+                    day[slot].append(place)
+                    day["remaining"][slot] -= place["duration"]
+                    placed = True
+                    break
+
+            if not placed:
+                day_index += 1
+
+        if day_index >= duration_days:
+            break
+
+    preferred = place.get("best_time")
+
+    slots = (
+        [preferred]
+        if preferred in TIME_SLOTS and day["remaining"][preferred] >= place["duration"]
+        else TIME_SLOTS.keys()
+    )
+
+    # Assignation des horaires
+    for d in days:
+        d["morning"] = allocate_times(d["morning"], start_hour=9)
+        d["afternoon"] = allocate_times(d["afternoon"], start_hour=14)
+        d["evening"] = allocate_times(d["evening"], start_hour=18)
+
+        d.pop("remaining", None)
+
+    return days
+
+
+
 def build_itinerary_prompt(profile: TravelProfile, places_text: str) -> str:
     """
     Construire un prompt explicite demandant une sortie JSON strictement formatée.
@@ -140,14 +259,29 @@ Contrainte utilisateur:
 - Contraintes: {constraints}
 - Langue souhaitée: {profile.language}
 
-Voici la liste des lieux / activités disponibles (utilise uniquement ces éléments pour les recommandations):
+
+Voici un planning pré-organisé par un algorithme de planification
+tenant compte de la durée des visites et des moments de la journée.
+Tu DOIS respecter strictement cette structure.
+
+Planning JSON pré-calculé (NE PAS MODIFIER):
 {places_text}
 
+Pour chaque activité du planning:
+- name → name
+- category → category
+- description → description
+- budget → budget
+- best_time → best_time
+- tips → tips
+- id → source_id
+- city → source_city
+
 Instructions:
-1) Conçois un itinéraire pour {profile.duration_days} jours.
+1) Enrichis et améliore ce planning sans modifier la structure.
 2) Chaque jour doit contenir au minimum une activité le matin et une l'après-midi; le soir est optionnel.
 3) Respecte le budget et les centres d'intérêt autant que possible.
-4) N'ajoute pas de lieux qui ne figurent pas dans la liste ci-dessus. Tu peux regrouper plusieurs activités proches le même jour.
+4) N'ajoute pas de lieux qui ne figurent pas dans la liste ci-dessus.
 5) Réponds STRICTEMENT en JSON valide avec la structure suivante:
 
 {{
@@ -158,13 +292,16 @@ Instructions:
       "morning": [
         {{
           "name": "...",
+          "start_time": "HH:MM",
+          "end_time": "HH:MM",
           "category": "...",
           "description": "...",
           "budget": "...",
           "best_time": "...",
           "tips": "...",
           "source_id": "...",
-          "source_city": "..."
+          "source_city": "...",
+          "maps_url": "https://www.google.com/maps/..."
         }}
       ],
       "afternoon": [...],
@@ -177,6 +314,13 @@ IMPORTANT:
 - Ne fournis aucun texte hors du JSON.
 - Si tu dois mentionner un manque d'information, place le message dans un champ "notes" au niveau du JSON.
 Réponds dans la langue demandée: {profile.language}.
+- Ne change pas les jours.
+- Ne déplace pas une activité vers un autre moment.
+- Ne supprime pas d’activité.
+- N’ajoute aucun lieu.
+- Améliore uniquement les descriptions, conseils et cohérence narrative.
+- Ne modifie jamais les champs start_time et end_time.
+- Les horaires sont déjà calculés par le système.
 """
     return prompt
 
@@ -201,6 +345,12 @@ def extract_json_from_text(text: str) -> Optional[str]:
     return None
 
 
+def generate_maps_url(name: str, city: str) -> str:
+    base_url = "https://www.google.com/maps/search/"
+    query = f"{name}, {city}".replace(" ", "+")
+    return base_url + query
+
+
 def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
     """
     Convertit le JSON (str) en Itinerary (Pydantic).
@@ -214,6 +364,8 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
             morning.append(
                 ItineraryActivity(
                     name=a.get("name", ""),
+                    start_time=a.get("start_time"),
+                    end_time=a.get("end_time"),
                     category=a.get("category"),
                     description=a.get("description"),
                     budget=a.get("budget"),
@@ -221,6 +373,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     tips=a.get("tips"),
                     source_id=a.get("source_id"),
                     source_city=a.get("source_city"),
+                    maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )
 
@@ -229,6 +382,8 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
             afternoon.append(
                 ItineraryActivity(
                     name=a.get("name", ""),
+                    start_time=a.get("start_time"),
+                    end_time=a.get("end_time"),
                     category=a.get("category"),
                     description=a.get("description"),
                     budget=a.get("budget"),
@@ -236,6 +391,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     tips=a.get("tips"),
                     source_id=a.get("source_id"),
                     source_city=a.get("source_city"),
+                    maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )
 
@@ -244,6 +400,8 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
             evening.append(
                 ItineraryActivity(
                     name=a.get("name", ""),
+                    start_time=a.get("start_time"),
+                    end_time=a.get("end_time"),
                     category=a.get("category"),
                     description=a.get("description"),
                     budget=a.get("budget"),
@@ -251,6 +409,7 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     tips=a.get("tips"),
                     source_id=a.get("source_id"),
                     source_city=a.get("source_city"),
+                    maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )
 
@@ -273,44 +432,49 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
 
 # ---------- Appel direct du LLM Hugging Face ----------
 # ---------- Appel direct du LLM Hugging Face ----------
-
 def call_hf_llm(prompt: str) -> str:
     """
-    Appelle le modèle Hugging Face via l'API chat pour générer du texte.
-    Compatible avec les versions récentes du client Inference.
+    Appelle le modèle Hugging Face via l'API chat_completion
+    compatible avec InferenceClient.
+    Extraction robuste adaptée à tous les formats HF.
     """
     if not HF_API_KEY:
         raise ValueError("HF_API_KEY manquant dans .env")
 
     client = InferenceClient(model=LLM_MODEL_NAME, token=HF_API_KEY)
 
-    # Appel chat standard
-    resp = client.chat(
+    resp = client.chat_completion(
         messages=[{"role": "user", "content": prompt}],
-        max_new_tokens=800,
+        max_tokens=2500,
         temperature=0.5,
-        do_sample=True,
-        top_p=0.9,
-        repetition_penalty=1.05,
+        top_p=0.9
     )
 
-    # Extraction défensive du texte
-    # Selon la version, resp peut être :
-    # - un dict avec 'generated_text'
-    # - un ProxyClientChatMessage
-    # - une liste de messages
-    if isinstance(resp, str):
-        return resp
-    if isinstance(resp, dict) and "generated_text" in resp:
-        return resp["generated_text"]
-    if hasattr(resp, "content"):
-        # ProxyClientChatMessage
-        return resp.content[0].text if isinstance(resp.content, list) else str(resp.content)
-    if isinstance(resp, list) and len(resp) > 0:
-        first = resp[0]
-        if hasattr(first, "content") and isinstance(first.content, list):
-            return first.content[0].text
+    # ----------------------------------------
+    # Extraction compatible tous modèles HF
+    # ----------------------------------------
+    try:
+        if hasattr(resp, "choices") and resp.choices:
+            choice = resp.choices[0]
+
+            # 1) Format Mistral/Llama HF
+            if hasattr(choice, "text") and isinstance(choice.text, str):
+                return choice.text
+
+            # 2) Format OpenAI-like
+            if hasattr(choice, "message") and isinstance(choice.message, dict):
+                if "content" in choice.message:
+                    return choice.message["content"]
+    except Exception:
+        pass
+
+    # 3) Format direct HuggingFace
+    if hasattr(resp, "generated_text"):
+        return resp.generated_text
+
+    # 4) Fallback
     return str(resp)
+
 
 
 
@@ -326,10 +490,23 @@ def generate_itinerary(profile: TravelProfile, max_docs: int = 30) -> Itinerary:
         )
 
     # 2) formater pour prompt
-    places_text = format_places_for_prompt(docs)
-
+    # places_text = format_places_for_prompt(docs)
     # 3) construire prompt
-    prompt = build_itinerary_prompt(profile, places_text)
+    # prompt = build_itinerary_prompt(profile, places_text)
+
+    # 2) transformer les docs en lieux exploitables
+    places = [parse_place_from_doc(d) for d in docs]
+
+    # 3) construire un planning temps-réel
+    planned_days = build_time_based_plan(
+        places=places,
+        duration_days=profile.duration_days
+   )
+
+    # 4) injecter le planning (et non la liste brute)
+    planning_text = json.dumps(planned_days, ensure_ascii=False, indent=2)
+
+    prompt = build_itinerary_prompt(profile, planning_text)
 
     # 4) invoquer le LLM Hugging Face directement
     try:

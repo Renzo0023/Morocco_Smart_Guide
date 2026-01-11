@@ -29,6 +29,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# -----------------------------------------------------
+# PAGE D'ACCUEIL (Évite la 404)
+# -----------------------------------------------------
+@app.get("/")
+def root():
+    return {"message": "Bienvenue sur l’API Morocco Smart Guide 🚀"}
+
 
 # =====================================================
 #  🔧 SESSIONS AVEC MÉMOIRE EN RAM (simple mais suffisant)
@@ -113,8 +120,10 @@ def chat_with_assistant(request: ChatRequest):
     try:
         result = chain({"question": request.message})
         answer = result["answer"]
-    except Exception as e:
-        raise HTTPException(500, f"Erreur interne chat : {e}")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, "Erreur interne chat (voir console)")
 
     # Mise à jour historique (au cas où tu veuilles l'afficher côté front)
     session["history"].append(
@@ -145,7 +154,7 @@ def get_recommendations(city: str, interests: str = "", k: int = 10):
     retriever = get_retriever(k=k, city=city)
 
     query = f"Lieux recommandés pour : {interests} à {city}"
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
 
     return [
         {
