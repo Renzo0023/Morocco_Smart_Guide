@@ -43,10 +43,6 @@ class ItineraryActivity(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
 
-    # Metadata optionnelle
-    source_id: Optional[str] = None
-    source_city: Optional[str] = None
-
     # Ajout du lien Google Maps
     maps_url: Optional[str] = None
 

@@ -111,13 +111,14 @@ def _load_places_from_csv(path: Path) -> List[Place]:
     """
     Charge un fichier CSV de lieux et le convertit en liste de Place.
     """
-    delimiter = _detect_delimiter(path)
+    #delimiter = _detect_delimiter(path)
 
     places: List[Place] = []
     with path.open("r", encoding="utf-8") as f:
-        reader = csv.DictReader(f, delimiter=delimiter)
+        reader = csv.DictReader(f, delimiter=";")
         for raw_row in reader:
             row = _normalize_row(raw_row)
+            print("Row normalisée:", row)
 
             id_ = row.get("id") or row.get("code") or row.get("slug") or row.get("name")
             if not id_:
@@ -125,7 +126,7 @@ def _load_places_from_csv(path: Path) -> List[Place]:
                 continue
 
             name = row.get("name") or "Lieu sans nom"
-            city = row.get("city") or "Ville inconnue"
+            city = (row.get("city") or "Ville inconnue").strip()
             country = row.get("country") or "Morocco"
 
             category = row.get("category")
@@ -208,6 +209,7 @@ def load_places(data_dir: Path | None = None) -> List[Place]:
         raise FileNotFoundError(f"Dossier de données introuvable : {base_dir}")
 
     csv_files = sorted(base_dir.glob("*_places.csv"))
+    print("CSV détectés:", csv_files)
     if not csv_files:
         # fallback : charger n'importe quel .csv si *_places.csv n'existe pas
         csv_files = sorted(base_dir.glob("*.csv"))
@@ -282,3 +284,4 @@ def to_documents(places: List[Place]) -> List[Document]:
     Transforme une liste de Place en liste de Documents pour le RAG.
     """
     return [place_to_document(p) for p in places]
+

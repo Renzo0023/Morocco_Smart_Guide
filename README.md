@@ -1,195 +1,195 @@
-🇲🇦 Morocco Smart Guide — README
+🇲🇦 Morocco Smart Guide
+
+
+*Morocco Smart Guide* est un assistant touristique intelligent basé sur l’intelligence artificielle, conçu pour faciliter la planification de voyages au Maroc à travers des itinéraires personnalisés et une assistance conversationnelle contextuelle.
+
+Le projet repose sur une architecture moderne, modulaire et entièrement open-source, combinant recherche sémantique, génération contrôlée de texte et planification algorithmique.
+
+
 🎯 Objectif du projet
 
-Morocco Smart Guide est un assistant touristique intelligent capable de :
+L’objectif principal du projet est de proposer une application capable de :
 
-Générer des itinéraires de voyage personnalisés au Maroc
+* Générer des itinéraires touristiques personnalisés et structurés au Maroc
+* Fournir une assistance conversationnelle via un chatbot IA contextuel
+* Exploiter une base de connaissances touristique dédiée à l’aide d’un système RAG
+* S’adapter aux préférences des utilisateurs : budget, centres d’intérêt, contraintes et durée du séjour
 
-Répondre aux questions des voyageurs via un chatbot IA multilingue
+Contrairement à un simple usage d’un modèle de langage généraliste, la solution proposée repose sur une intégration contrôlée de l’IA, garantissant des résultats cohérents, fiables et directement exploitables.
 
-Fournir des fiches détaillées pour chaque lieu (RAG)
-
-S’adapter aux préférences : budget, centres d’intérêt, contraintes, durée...
-
-Le projet repose sur une architecture moderne, modulaire et 100% open-source
-(LLM & embeddings Hugging Face, FAISS, LangChain).
 
 🚀 Fonctionnalités — MVP
-✔️ 1. Base de connaissances touristique (RAG)
 
-Données structurées dans des fichiers CSV multi-villes
+1. Base de connaissances touristique (RAG)
 
-Index vectoriel FAISS local
+* Données touristiques structurées sous forme de fichiers CSV multi-villes
+* Chargement et normalisation automatique des données
+* Index vectoriel FAISS local persisté sur disque
+* Embeddings multilingues basés sur le modèle
+  sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
-Embeddings multilingues :
-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
-✔️ 2. Chatbot IA (FR/EN)
+2. Chatbot touristique IA (FR / EN)
 
-Moteur conversationnel basé sur LangChain
+* Moteur conversationnel basé sur une chaîne RAG personnalisée
+* Recherche sémantique sur la base FAISS
+* Mémoire de session conservée côté backend
+* Réponses contextualisées ancrées dans la base de connaissances
+* Interaction en langage naturel avec continuité conversationnelle
 
-RAG + mémoire via ConversationalRetrievalChain
 
-Réponses dans la langue de l’utilisateur
+3. Génération d’itinéraires jour par jour
 
-✔️ 3. Génération d’itinéraires jour par jour
+* Sélection des lieux via recherche sémantique (FAISS)
+* Planification déterministe des activités par jour et créneau
+  (matin / après-midi / soir)
+* Prise en compte explicite des paramètres :
 
-Utilisation d’un LLM Hugging Face hébergé (ex : Mistral 7B)
+  * budget
+  * centres d’intérêt
+  * contraintes
+  * durée du séjour
+* Génération finale structurée en JSON
+* Enrichissement contrôlé des descriptions via un LLM Hugging Face
+* Modèle recommandé :
+  mistralai/Mistral-7B-Instruct-v0.2
 
-Itinéraires structurés (matin / après-midi / soir) en JSON
 
-Prise en compte :
+4. Frontend Streamlit
 
-budget
+* Interface simple et intuitive
+* Formulaire complet de génération d’itinéraire
+* Visualisation ergonomique des plannings journaliers
+* Intégration d’un chatbot avec mémoire de session
+* Liens Google Maps pour chaque activité
 
-centres d’intérêt
 
-contraintes
+⭐ Fonctionnalités optionnelles (perspectives)
 
-multi-villes
+* Orchestration multi-agents (LangGraph)
+* Recherche visuelle par image (CLIP)
+* Carte interactive (Folium / Leaflet)
+* Intégration d’APIs externes (météo, transports)
 
-✔️ 4. Frontend Streamlit
-
-Formulaire complet : ville(s), durée, budget, intérêts, contraintes
-
-Affichage ergonomique de l’itinéraire
-
-Onglet chatbot avec mémoire de session
-
-⭐ Fonctionnalités optionnelles (si le temps le permet)
-
-Workflow multi-agents (LangGraph)
-
-Recherche par image (CLIP)
-
-Carte interactive (Leaflet / Folium)
-
-Météo / transports (API externes)
 
 🧱 Stack technique
-Backend
 
-FastAPI
+ Backend
 
-LangChain (RAG, prompts, orchestration)
+* FastAPI
+* LangChain (documents, vector stores, RAG)
+* FAISS-cpu (base vectorielle locale)
 
-FAISS-cpu (vector store)
+ IA / LLM (open-source)
 
-IA / LLM (Open-source)
+* Hugging Face Inference API
+* Modèle de génération :
+  mistralai/Mistral-7B-Instruct-v0.2
+* Modèle d’embeddings :
+  sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
-HuggingFace Hub (LLM)
+ Frontend
 
-Modèle recommandé :
-mistralai/Mistral-7B-Instruct-v0.2
+* Streamlit
 
-Embeddings :
-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+ Outils complémentaires
 
-Frontend
+* python-dotenv (gestion des variables d’environnement)
+* httpx (client HTTP)
+* jupyter (tests et exploration)
 
-Streamlit
+---
 
-Divers
+ 📁 Structure du projet
 
-python-dotenv (gestion .env)
 
-httpx (client HTTP)
-
-jupyter (tests / exploration)
-
-📁 Structure du projet
 morocco_smart_guide/
 ├─ app/
 │  ├─ config.py
 │  ├─ data/
-│  │  ├─ loader.py                # Charge CSV multi-villes → Places → Documents
+│  │  └─ loader.py                # CSV → Places → Documents
 │  ├─ rag/
 │  │  ├─ embeddings.py            # Embeddings Hugging Face
 │  │  ├─ vectorstore.py           # FAISS build/load/retriever
 │  │  └─ qa_chain.py              # RAG + mémoire (chatbot)
 │  ├─ itineraries/
-│  │  ├─ models.py                # TravelProfile, Itinerary, etc.
-│  │  └─ generator.py             # Génération d’itinéraires via LLM HF
+│  │  ├─ models.py                # TravelProfile, Itinerary…
+│  │  └─ generator.py             # Génération d’itinéraires
 │  └─ api/
 │     ├─ schemas.py               # ChatRequest / ChatResponse
-│     └─ main.py                  # Endpoints FastAPI
+│     └─ main.py                  # API FastAPI
 │
 ├─ scripts/
 │  ├─ build_faiss_index.py        # Construction index FAISS
-│  └─ demo_generate_itinerary.py  # Tests rapides
+│  └─ demo_generate_itinerary.py
 │
-├─ data/                          # CSV multi-villes (Marrakech, Fès...)
+├─ data/                          # CSV multi-villes
 ├─ notebooks/                     # Expérimentations
 ├─ requirements.txt
 ├─ README.md
 └─ .env.example
 
-🛠️ Installation & Lancement
-1. Cloner le dépôt
+
+
+ 🛠️ Installation et lancement
+
+ 1. Cloner le dépôt
+
+bash
 git clone https://github.com/Renzo0023/morocco_smart_guide.git
 cd morocco_smart_guide
 
-2. Créer un environnement Python
-python -m venv venv
-source venv/bin/activate       # Linux/Mac
-venv\Scripts\activate          # Windows
 
-3. Installer les dépendances
+ 2. Créer un environnement virtuel
+
+bash
+python -m venv venv             # Python 3.11 (3.11.9 par exemple)
+source venv/bin/activate        # Linux / Mac
+venv\Scripts\activate           # Windows
+
+
+ 3. Installer les dépendances
+
+bash
 pip install -r requirements.txt
+pip install langchain-community
+pip install langchain-community sequence transformers
+pip install langchain-huggingface
 
-4. Configurer les variables d’environnement
+
+ 4. Configurer les variables d’environnement
 
 Créer un fichier .env :
 
+env
 HF_API_KEY=ton_token_huggingface
 LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
 EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 DATA_DIR=./data
 FAISS_INDEX_PATH=./app/rag/faiss_index
 
-5. Construire l’index vectoriel FAISS
+
+ 5. Construire l’index vectoriel FAISS
+
+bash
 python -m scripts.build_faiss_index
 
-6. Lancer l’API FastAPI
+
+ 6. Lancer l’API FastAPI
+
+bash
 uvicorn app.api.main:app --reload
 
-7. Lancer l’interface Streamlit
-streamlit run app/ui/app.py    # si tu as un fichier Streamlit
 
-🧪 Exemple d’appel API
-Génération d’itinéraire
-curl -X POST "http://localhost:8000/itinerary" \
--H "Content-Type: application/json" \
--d '{
-  "city": "Marrakech",
-  "duration_days": 3,
-  "budget": "medium",
-  "interests": ["culture", "gastronomy"],
-  "constraints": "éviter trop de marche",
-  "language": "fr"
-}'
+ 7. Lancer l’interface Streamlit
 
-Chatbot
-curl -X POST "http://localhost:8000/chat" \
--H "Content-Type: application/json" \
--d '{"message": "Que visiter à Marrakech en 2 jours ?"}'
+bash
+streamlit run app/ui/app.py
 
-🤝 Contribution
 
-Chaque membre travaille sur sa propre branche
+ 👥 Auteurs
 
-Pull avant push
-
-Pull requests sur main pour fusion
-
-Code documenté + tests minimaux
-
-👥 Auteurs
-
-ZONGO Nabonswendé Regis Epiphane
-
-CISSE Marwane
-
-LANKOANDE Melwine
-
-MBAIHORNOM Lionel
+* ZONGO Nabonswendé Regis Epiphane
+* CISSE Marwane
+* LANKOANDE Melwine
+* MBAIHORNOM Lionel

@@ -43,62 +43,20 @@ def build_retriever_query(profile: TravelProfile) -> str:
 
 
 def get_candidate_places(profile: TravelProfile, max_docs: int = 30) -> List[Document]:
-    """
-    Utilise le retriever FAISS pour obtenir des documents candidats.
+    retriever = get_retriever(
+        k=max_docs,
+        city=profile.city,
+        category=None
+    )
 
-    Compatible avec les nouvelles versions de LangChain :
-    - tente get_relevant_documents()
-    - sinon tente invoke()
-    - sinon descend au niveau vectorstore.similarity_search()
-    """
-    retriever = get_retriever(k=max_docs)
     query = build_retriever_query(profile)
 
-    docs: List[Document] = []
-
-    # 1) Nouveau style: get_relevant_documents
     if hasattr(retriever, "get_relevant_documents"):
         docs = retriever.get_relevant_documents(query)
     else:
-        # 2) API de BaseRetriever (invoke)
-        try:
-            result = retriever.invoke(query)
-            if isinstance(result, list):
-                docs = result
-            else:
-                docs = [result]
-        except Exception:
-            # 3) fallback bas niveau : vecteur FAISS sous-jacent
-            vectorstore = getattr(retriever, "vectorstore", None)
-            if vectorstore is not None and hasattr(vectorstore, "similarity_search"):
-                docs = vectorstore.similarity_search(query, k=max_docs)
-            else:
-                raise RuntimeError(
-                    "Impossible de récupérer des documents avec le retriever : "
-                    "ni get_relevant_documents, ni invoke, ni vectorstore.similarity_search disponibles."
-                )
+        docs = retriever.invoke(query)
 
-    # Filtrer par city metadata si demandé
-    if profile.city:
-        filtered = []
-        for d in docs:
-            meta_city = None
-            if isinstance(d.metadata, dict):
-                meta_city = (
-                    d.metadata.get("city")
-                    or d.metadata.get("location")
-                    or d.metadata.get("source_city")
-                )
-                if meta_city and isinstance(meta_city, str):
-                    if profile.city.lower() in meta_city.lower():
-                        filtered.append(d)
-                else:
-                    filtered.append(d)
-            else:
-                filtered.append(d)
-        docs = filtered
-
-    return docs[:max_docs]
+    return docs
 
 
 def format_places_for_prompt(docs: List[Document], max_chars: int = 20000) -> str:
@@ -221,14 +179,6 @@ def build_time_based_plan(
         if day_index >= duration_days:
             break
 
-    preferred = place.get("best_time")
-
-    slots = (
-        [preferred]
-        if preferred in TIME_SLOTS and day["remaining"][preferred] >= place["duration"]
-        else TIME_SLOTS.keys()
-    )
-
     # Assignation des horaires
     for d in days:
         d["morning"] = allocate_times(d["morning"], start_hour=9)
@@ -274,8 +224,6 @@ Pour chaque activité du planning:
 - budget → budget
 - best_time → best_time
 - tips → tips
-- id → source_id
-- city → source_city
 
 Instructions:
 1) Enrichis et améliore ce planning sans modifier la structure.
@@ -299,8 +247,6 @@ Instructions:
           "budget": "...",
           "best_time": "...",
           "tips": "...",
-          "source_id": "...",
-          "source_city": "...",
           "maps_url": "https://www.google.com/maps/..."
         }}
       ],
@@ -371,8 +317,6 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     budget=a.get("budget"),
                     best_time=a.get("best_time"),
                     tips=a.get("tips"),
-                    source_id=a.get("source_id"),
-                    source_city=a.get("source_city"),
                     maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )
@@ -389,8 +333,6 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     budget=a.get("budget"),
                     best_time=a.get("best_time"),
                     tips=a.get("tips"),
-                    source_id=a.get("source_id"),
-                    source_city=a.get("source_city"),
                     maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )
@@ -407,8 +349,6 @@ def parse_itinerary_json(json_text: str, profile: TravelProfile) -> Itinerary:
                     budget=a.get("budget"),
                     best_time=a.get("best_time"),
                     tips=a.get("tips"),
-                    source_id=a.get("source_id"),
-                    source_city=a.get("source_city"),
                     maps_url=generate_maps_url(a["name"], a.get("city") or a.get("source_city") or profile.city),
                 )
             )

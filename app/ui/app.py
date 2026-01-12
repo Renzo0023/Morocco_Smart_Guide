@@ -16,27 +16,27 @@ st.set_page_config(
 # ------------------------------------------
 
 st.sidebar.title("📍 Navigation")
-page = st.sidebar.radio("Aller à :", ["🧭 Générateur d’itinéraire", "💬 Chatbot IA"])
+page = st.sidebar.radio("Go to:", ["🧭 Itinerary Generator", "💬 AI Chatbot"])
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Morocco Smart Guide – IA Tourisme 🇲🇦")
+st.sidebar.caption("Morocco Smart Guide – Tourism AI 🇲🇦")
 
 
 # ==================================================
-# PAGE 1 : GENERATEUR D’ITINERAIRE
+# PAGE 1: ITINERARY GENERATOR
 # ==================================================
 
-if page == "🧭 Générateur d’itinéraire":
-    st.title("🧭 Générer un itinéraire personnalisé")
+if page == "🧭 Itinerary Generator":
+    st.title("🧭 Generate a personalized itinerary")
 
-    city = st.text_input("Ville principale", placeholder="ex : Marrakech")
-    duration = st.number_input("Durée (jours)", min_value=1, value=3)
+    city = st.text_input("Main city", placeholder="e.g.: Marrakech")
+    duration = st.number_input("Duration (days)", min_value=1, value=3)
     budget = st.selectbox("Budget", ["low", "medium", "high"], index=1)
-    interests = st.text_input("Centres d’intérêt", placeholder="culture, gastronomy, shopping …")
-    constraints = st.text_area("Contraintes", placeholder="optionnel")
-    language = st.selectbox("Langue", ["fr", "en"], index=0)
+    interests = st.text_input("Interests", placeholder="culture, gastronomy, shopping …")
+    constraints = st.text_area("Constraints", placeholder="optional")
+    language = st.selectbox("Language", ["en", "fr"], index=0)
 
-    if st.button("Générer l’itinéraire", use_container_width=True):
+    if st.button("Generate itinerary", use_container_width=True):
         payload = {
             "city": city or None,
             "duration_days": int(duration),
@@ -47,22 +47,22 @@ if page == "🧭 Générateur d’itinéraire":
         }
 
         try:
-            with st.spinner("Génération de l’itinéraire…"):
+            with st.spinner("Generating itinerary…"):
                 resp = requests.post(f"{API_URL}/itinerary", json=payload)
                 resp.raise_for_status()
 
             itinerary = resp.json()
-            st.success("Itinéraire généré avec succès !")
+            st.success("Itinerary successfully generated!")
 
-            st.subheader(f"📍 Ville : **{itinerary['city']}**")
-            st.markdown(f"**Durée :** {itinerary['duration_days']} jours")
+            st.subheader(f"📍 City: **{itinerary['city']}**")
+            st.markdown(f"**Duration:** {itinerary['duration_days']} days")
 
             for day in itinerary["days"]:
-                st.markdown(f"## 🗓️ Jour {day['day_number']}")
+                st.markdown(f"## 🗓️ Day {day['day_number']}")
 
                 col_morning, col_afternoon, col_evening = st.columns(3)
 
-                col_morning.markdown("### 🌅 Matin (09:00 – 13:00)")
+                col_morning.markdown("### 🌅 Morning")
                 for a in day["morning"]:
                     time_range = ""
                     if a.get("start_time") and a.get("end_time"):
@@ -78,7 +78,7 @@ if page == "🧭 Générateur d’itinéraire":
                         f"{time_range}**{title}**\n\n{a.get('description','')}"
                     )
 
-                col_afternoon.markdown("### 🌞 Après-midi (14:00 – 18:00)")
+                col_afternoon.markdown("### 🌞 Afternoon")
                 for a in day["afternoon"]:
                     time_range = ""
                     if a.get("start_time") and a.get("end_time"):
@@ -94,7 +94,7 @@ if page == "🧭 Générateur d’itinéraire":
                         f"{time_range}**{title}**\n\n{a.get('description','')}"
                     )
 
-                col_evening.markdown("### 🌙 Soir (à partir de 18:00)")
+                col_evening.markdown("### 🌙 Evening")
                 for a in day["evening"]:
                     time_range = ""
                     if a.get("start_time") and a.get("end_time"):
@@ -110,29 +110,31 @@ if page == "🧭 Générateur d’itinéraire":
                         f"{time_range}**{title}**\n\n{a.get('description','')}"
                     )
 
-                
         except Exception as e:
-            st.error(f"❌ Erreur : {e}")
+            st.error(f"❌ Error: {e}")
 
 
 # ==================================================
-# PAGE 2 : CHATBOT IA
+# PAGE 2: AI CHATBOT
 # ==================================================
 
-if page == "💬 Chatbot IA":
-    st.title("💬 Chatbot Touristique – IA Maroc")
+if page == "💬 AI Chatbot":
+    st.title("💬 Tourism Chatbot – Morocco AI")
 
-    # Initialisation session
+    # Session initialization
     if "chat_session_id" not in st.session_state:
         st.session_state.chat_session_id = None
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # Saisie
-    user_msg = st.text_input("Votre message :", placeholder="Posez une question sur une ville, un lieu, un itinéraire...")
+    # Input
+    user_msg = st.text_input(
+        "Your message:",
+        placeholder="Ask a question about a city, a place, an itinerary..."
+    )
 
-    if st.button("Envoyer", use_container_width=True):
+    if st.button("Send", use_container_width=True):
         if user_msg.strip():
             payload = {
                 "session_id": st.session_state.chat_session_id,
@@ -146,21 +148,21 @@ if page == "💬 Chatbot IA":
 
                 data = resp.json()
 
-                # Mise à jour session ID
+                # Update session ID
                 st.session_state.chat_session_id = data["session_id"]
 
-                # Stockage de l'historique
+                # Store history
                 st.session_state.chat_history.append(("user", user_msg))
                 st.session_state.chat_history.append(("assistant", data["answer"]))
 
             except Exception as e:
-                st.error(f"Erreur : {e}")
+                st.error(f"Error: {e}")
 
-    # Affichage de l'historique
-    st.markdown("### 💬 Historique")
+    # Display history
+    st.markdown("### 💬 History")
 
     for role, message in st.session_state.chat_history:
         if role == "user":
-            st.markdown(f"**🧍 Vous :** {message}")
+            st.markdown(f"**🧍 You:** {message}")
         else:
-            st.markdown(f"**🤖 Assistant :** {message}")
+            st.markdown(f"**🤖 Assistant:** {message}")

@@ -39,17 +39,17 @@ def build_faiss_index(documents: Optional[List[Document]] = None) -> FAISS:
     return vectorstore
 
 
-def build_and_save_faiss_index(save_dir: Path | None = None) -> None:
+def build_and_save_faiss_index(places: list[Place], save_dir: Path | None = None) -> None:
     """
-    Construit l'index FAISS et le sauvegarde dans un dossier (par défaut INDEX_DIR).
-
-    À appeler une première fois (ou à chaque mise à jour des données) via :
-      python -m scripts.build_faiss_index
+    Construit l'index FAISS à partir d'une liste de lieux et le sauvegarde.
     """
     save_dir = save_dir or INDEX_DIR
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    vs = build_faiss_index()
+    from app.data.loader import to_documents
+    documents = to_documents(places)
+
+    vs = build_faiss_index(documents)  # maintenant on utilise exactement ces lieux
     vs.save_local(str(save_dir))
 
     print(f"[FAISS] Index construit et sauvegardé dans {save_dir}")

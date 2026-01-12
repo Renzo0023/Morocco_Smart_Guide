@@ -15,7 +15,6 @@ from app.data.loader import load_places
 
 
 def main():
-    # Juste pour info : combien de lieux vont être indexés ?
     try:
         places = load_places()
         print(f"[DATA] {len(places)} lieux chargés depuis les CSV.")
@@ -25,7 +24,7 @@ def main():
 
     print("[FAISS] Construction de l'index...")
     try:
-        build_and_save_faiss_index()
+        build_and_save_faiss_index(places)
         print("[FAISS] Index construit et sauvegardé avec succès ✅")
     except Exception as e:
         print(f"[FAISS] Erreur lors de la construction de l'index : {e}")
