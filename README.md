@@ -103,31 +103,31 @@ Contrairement à un simple usage d’un modèle de langage généraliste, la sol
  📁 Structure du projet
 
 
-morocco_smart_guide/
-├─ app/
-│  ├─ config.py
-│  ├─ data/
-│  │  └─ loader.py                # CSV → Places → Documents
-│  ├─ rag/
-│  │  ├─ embeddings.py            # Embeddings Hugging Face
-│  │  ├─ vectorstore.py           # FAISS build/load/retriever
-│  │  └─ qa_chain.py              # RAG + mémoire (chatbot)
-│  ├─ itineraries/
-│  │  ├─ models.py                # TravelProfile, Itinerary…
-│  │  └─ generator.py             # Génération d’itinéraires
-│  └─ api/
-│     ├─ schemas.py               # ChatRequest / ChatResponse
-│     └─ main.py                  # API FastAPI
-│
-├─ scripts/
-│  ├─ build_faiss_index.py        # Construction index FAISS
-│  └─ demo_generate_itinerary.py
-│
-├─ data/                          # CSV multi-villes
-├─ notebooks/                     # Expérimentations
-├─ requirements.txt
-├─ README.md
-└─ .env.example
+* morocco_smart_guide/
+* ├─ app/
+* │  ├─ config.py
+* │  ├─ data/
+* │  │  └─ loader.py                # CSV → Places → Documents
+* │  ├─ rag/
+* │  │  ├─ embeddings.py            # Embeddings Hugging Face
+* │  │  ├─ vectorstore.py           # FAISS build/load/retriever
+* │  │  └─ qa_chain.py              # RAG + mémoire (chatbot)
+* │  ├─ itineraries/
+* │  │  ├─ models.py                # TravelProfile, Itinerary…
+* │  │  └─ generator.py             # Génération d’itinéraires
+* │  └─ api/
+* │     ├─ schemas.py               # ChatRequest / ChatResponse
+* │     └─ main.py                  # API FastAPI
+* │
+* ├─ scripts/
+* │  ├─ build_faiss_index.py        # Construction index FAISS
+* │  └─ demo_generate_itinerary.py
+* │
+* ├─ data/                          # CSV multi-villes
+* ├─ notebooks/                     # Expérimentations
+* ├─ requirements.txt
+* ├─ README.md
+* └─ .env.example
 
 
 
@@ -159,12 +159,11 @@ bash
 
 Créer un fichier .env :
 
-env
-HF_API_KEY=ton_token_huggingface
-LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
-EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-DATA_DIR=./data
-FAISS_INDEX_PATH=./app/rag/faiss_index
+* HF_API_KEY=ton_token_huggingface
+* LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
+* EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+* DATA_DIR=./data
+* FAISS_INDEX_PATH=./app/rag/faiss_index
 
 
  5. Construire l’index vectoriel FAISS
