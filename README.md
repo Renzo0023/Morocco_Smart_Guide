@@ -1,4 +1,4 @@
-**Morocco Smart Guide
+Morocco Smart Guide
 
 
 *Morocco Smart Guide* est un assistant touristique intelligent basé sur l’intelligence artificielle, conçu pour faciliter la planification de voyages au Maroc à travers des itinéraires personnalisés et une assistance conversationnelle contextuelle.
@@ -187,3 +187,4 @@ streamlit run app/ui/app.py
 * CISSE Marwane
 * LANKOANDE Melwine
 * MBAIHORNOM Lionel
+* SOUNDA Abdelkerim Ahmat
