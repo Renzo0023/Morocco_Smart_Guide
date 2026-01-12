@@ -1,4 +1,4 @@
-🇲🇦 Morocco Smart Guide
+**Morocco Smart Guide
 
 
 *Morocco Smart Guide* est un assistant touristique intelligent basé sur l’intelligence artificielle, conçu pour faciliter la planification de voyages au Maroc à travers des itinéraires personnalisés et une assistance conversationnelle contextuelle.
@@ -151,10 +151,10 @@ venv\Scripts\activate           # Windows
  3. Installer les dépendances
 
 bash
-pip install -r requirements.txt
-pip install langchain-community
-pip install langchain-community sequence transformers
-pip install langchain-huggingface
+* pip install -r requirements.txt
+* pip install langchain-community
+* pip install langchain-community sequence transformers
+* pip install langchain-huggingface
 
 
  4. Configurer les variables d’environnement
