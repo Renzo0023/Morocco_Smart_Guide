@@ -135,17 +135,15 @@ morocco_smart_guide/
 
  1. Cloner le dépôt
 
-bash
-git clone https://github.com/Renzo0023/morocco_smart_guide.git
-cd morocco_smart_guide
+* git clone https://github.com/Renzo0023/morocco_smart_guide.git
+* cd morocco_smart_guide
 
 
  2. Créer un environnement virtuel
 
-bash
-python -m venv venv             # Python 3.11 (3.11.9 par exemple)
-source venv/bin/activate        # Linux / Mac
-venv\Scripts\activate           # Windows
+* python -m venv venv             # Python 3.11 (3.11.9 par exemple)
+* source venv/bin/activate        # Linux / Mac
+* venv\Scripts\activate           # Windows
 
 
  3. Installer les dépendances
@@ -171,19 +169,16 @@ FAISS_INDEX_PATH=./app/rag/faiss_index
 
  5. Construire l’index vectoriel FAISS
 
-bash
 python -m scripts.build_faiss_index
 
 
  6. Lancer l’API FastAPI
 
-bash
 uvicorn app.api.main:app --reload
 
 
  7. Lancer l’interface Streamlit
 
-bash
 streamlit run app/ui/app.py
 
 
