@@ -1,4 +1,4 @@
-🇲🇦 Morocco Smart Guide
+Morocco Smart Guide
 
 
 *Morocco Smart Guide* est un assistant touristique intelligent basé sur l’intelligence artificielle, conçu pour faciliter la planification de voyages au Maroc à travers des itinéraires personnalisés et une assistance conversationnelle contextuelle.
@@ -103,31 +103,31 @@ Contrairement à un simple usage d’un modèle de langage généraliste, la sol
  📁 Structure du projet
 
 
-morocco_smart_guide/
-├─ app/
-│  ├─ config.py
-│  ├─ data/
-│  │  └─ loader.py                # CSV → Places → Documents
-│  ├─ rag/
-│  │  ├─ embeddings.py            # Embeddings Hugging Face
-│  │  ├─ vectorstore.py           # FAISS build/load/retriever
-│  │  └─ qa_chain.py              # RAG + mémoire (chatbot)
-│  ├─ itineraries/
-│  │  ├─ models.py                # TravelProfile, Itinerary…
-│  │  └─ generator.py             # Génération d’itinéraires
-│  └─ api/
-│     ├─ schemas.py               # ChatRequest / ChatResponse
-│     └─ main.py                  # API FastAPI
-│
-├─ scripts/
-│  ├─ build_faiss_index.py        # Construction index FAISS
-│  └─ demo_generate_itinerary.py
-│
-├─ data/                          # CSV multi-villes
-├─ notebooks/                     # Expérimentations
-├─ requirements.txt
-├─ README.md
-└─ .env.example
+* morocco_smart_guide/
+* ├─ app/
+* │  ├─ config.py
+* │  ├─ data/
+* │  │  └─ loader.py                # CSV → Places → Documents
+* │  ├─ rag/
+* │  │  ├─ embeddings.py            # Embeddings Hugging Face
+* │  │  ├─ vectorstore.py           # FAISS build/load/retriever
+* │  │  └─ qa_chain.py              # RAG + mémoire (chatbot)
+* │  ├─ itineraries/
+* │  │  ├─ models.py                # TravelProfile, Itinerary…
+* │  │  └─ generator.py             # Génération d’itinéraires
+* │  └─ api/
+* │     ├─ schemas.py               # ChatRequest / ChatResponse
+* │     └─ main.py                  # API FastAPI
+* │
+* ├─ scripts/
+* │  ├─ build_faiss_index.py        # Construction index FAISS
+* │  └─ demo_generate_itinerary.py
+* │
+* ├─ data/                          # CSV multi-villes
+* ├─ notebooks/                     # Expérimentations
+* ├─ requirements.txt
+* ├─ README.md
+* └─ .env.example
 
 
 
@@ -135,55 +135,49 @@ morocco_smart_guide/
 
  1. Cloner le dépôt
 
-bash
-git clone https://github.com/Renzo0023/morocco_smart_guide.git
-cd morocco_smart_guide
+* git clone https://github.com/Renzo0023/morocco_smart_guide.git
+* cd morocco_smart_guide
 
 
  2. Créer un environnement virtuel
 
-bash
-python -m venv venv             # Python 3.11 (3.11.9 par exemple)
-source venv/bin/activate        # Linux / Mac
-venv\Scripts\activate           # Windows
+* python -m venv venv             # Python 3.11 (3.11.9 par exemple)
+* source venv/bin/activate        # Linux / Mac
+* venv\Scripts\activate           # Windows
 
 
  3. Installer les dépendances
 
 bash
-pip install -r requirements.txt
-pip install langchain-community
-pip install langchain-community sequence transformers
-pip install langchain-huggingface
+* pip install -r requirements.txt
+* pip install langchain-community
+* pip install langchain-community sequence transformers
+* pip install langchain-huggingface
 
 
  4. Configurer les variables d’environnement
 
 Créer un fichier .env :
 
-env
-HF_API_KEY=ton_token_huggingface
-LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
-EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-DATA_DIR=./data
-FAISS_INDEX_PATH=./app/rag/faiss_index
+* HF_API_KEY=ton_token_huggingface
+* LLM_MODEL_NAME=mistralai/Mistral-7B-Instruct-v0.2
+* EMBEDDING_MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+* DATA_DIR=./data
+* FAISS_INDEX_PATH=./app/rag/faiss_index
 
 
  5. Construire l’index vectoriel FAISS
 
-bash
 python -m scripts.build_faiss_index
 
 
  6. Lancer l’API FastAPI
 
-bash
 uvicorn app.api.main:app --reload
 
 
  7. Lancer l’interface Streamlit
 
-bash
 streamlit run app/ui/app.py
 
 
@@ -193,3 +187,4 @@ streamlit run app/ui/app.py
 * CISSE Marwane
 * LANKOANDE Melwine
 * MBAIHORNOM Lionel
+* SOUNDA Abdelkerim Ahmat
